@@ -32,6 +32,30 @@
 }
 ```
 
+### Codex
+
+`~/.codex/config.toml`의 `mcp_servers`에 추가:
+
+```toml
+[mcp_servers.toss-docs]
+command = "uvx"
+args = ["--from", "git+https://github.com/chabinhwang/toss-mcp", "toss-mcp"]
+```
+
+### Gemini CLI
+
+`~/.gemini/settings.json`의 `mcpServers`에 추가:
+
+```json
+{
+  "mcpServers": {
+    "toss-docs": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp", "toss-mcp"]
+    }
+  }
+}
+```
 ### Claude Desktop
 
 `claude_desktop_config.json`에 추가:
