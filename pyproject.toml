@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "toss-mcp"
+version = "0.1.0"
+description = "토스 개발자 문서 검색 MCP 서버"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp",
+    "httpx",
+]
+
+[project.scripts]
+toss-mcp = "toss_mcp.main:main"
