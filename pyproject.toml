@@ -15,3 +15,11 @@ dependencies = [
 
 [project.scripts]
 toss-mcp = "toss_mcp.main:main"
+
+[tool.hatch.build]
+include = [
+    "toss_mcp/**/*.py",
+    "toss_mcp/data/toss_icons.json.gz",
+    "README.md",
+    "LICENSE",
+]

@@ -9,6 +9,8 @@
 - 토스 개발자 문서 3개 소스 자동 수집 (앱인토스, TDS React Native, TDS Mobile)
 - 마크다운 헤더 기반 지능형 청킹 (H1 → H2 → H3 재귀 분할)
 - 2단계 키워드 검색 (정확 매칭 우선, 부분 매칭 폴백)
+- 토스 아이콘 카탈로그 검색 (`toss_mcp/data/toss_icons.json.gz`)
+- 아이콘 타입별 (`icon-*`, `icn-*`, `u1F...`) 추천 코드 가이드 제공
 - SHA256 해시 기반 캐시로 빠른 재시작
 - 비동기 병렬 수집 (동시 8개 요청)
 
@@ -138,6 +140,25 @@ python3 -m venv .venv
 |----------|------|------|------|
 | `force` | boolean | X | `true`이면 캐시 무시 후 강제 재수집 |
 
+### `search_icons`
+
+토스 아이콘 카탈로그(`toss_icons.json.gz`)를 검색하고, 아이콘 타입별 추천 사용 코드를 안내합니다.
+
+```
+검색어: "icon-search-bold-mono"
+```
+
+| 파라미터 | 타입 | 필수 | 설명 |
+|----------|------|------|------|
+| `query` | string | O | 검색어 (아이콘 이름/URL 일부, 공백으로 구분된 키워드) |
+| `icon_type` | string | X | 타입 필터 (`icon-*`, `icn-*`, `emoji/image`) |
+| `max_results` | number | X | 최대 결과 수 (기본 10, 최대 30) |
+
+**빠른 판단 규칙**
+
+- 이름이 `icon-`/`icn-`면 `name` 기반 컴포넌트 (`Icon`, `IconButton`, `Asset.Icon`)
+- 이름이 `u1F...`면 URL 기반 (`Asset.Image`, `Asset.ContentImage`)
+
 ## 동작 방식
 
 ```
@@ -170,7 +191,10 @@ toss-mcp/
     ├── collector.py     # 문서 수집 (httpx 비동기)
     ├── chunker.py       # 마크다운 청킹
     ├── searcher.py      # 키워드 검색
-    └── cache.py         # JSON 캐시 + 해시 관리
+    ├── icons.py         # 아이콘 카탈로그 로드/검색 + 타입별 추천
+    ├── cache.py         # JSON 캐시 + 해시 관리
+    └── data/
+        └── toss_icons.json.gz
 ```
 
 ## 라이선스

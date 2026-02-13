@@ -8,10 +8,16 @@ from mcp.server.fastmcp import FastMCP
 from .collector import collect_all, fetch_single_source_raw, SOURCES
 from .chunker import chunk_all
 from .searcher import search
+from .icons import (
+    SUPPORTED_ICON_TYPES,
+    ICON_USAGE_GUIDE,
+    load_icon_items,
+    search_icon_catalog,
+    get_item_usage_hint,
+)
 from .cache import (
     load_chunks,
     save_chunks,
-    needs_refresh,
     update_hashes,
 )
 
@@ -23,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 # 전역 청크 저장소
 _chunks: list[dict] = []
+_icon_items: list[dict] = []
 
 
 async def _init_chunks():
@@ -48,16 +55,27 @@ async def _init_chunks():
     logger.info("초기화 완료: %d개 청크", len(_chunks))
 
 
+def _init_icons():
+    """아이콘 카탈로그를 로드한다."""
+    global _icon_items
+    _icon_items = load_icon_items()
+    if _icon_items:
+        logger.info("아이콘 카탈로그 로드 완료: %d개", len(_icon_items))
+    else:
+        logger.warning("아이콘 카탈로그를 로드하지 못했습니다.")
+
+
 @asynccontextmanager
 async def lifespan(server: FastMCP):
     """서버 시작 시 문서를 로드한다."""
     await _init_chunks()
+    _init_icons()
     yield
 
 
 mcp = FastMCP(
     "toss-docs",
-    instructions="토스 개발자 문서(앱인토스, TDS React Native, TDS Mobile) 검색 도구",
+    instructions="토스 개발자 문서 검색 + 토스 아이콘 카탈로그 검색 도구",
     lifespan=lifespan,
 )
 
@@ -117,6 +135,67 @@ async def sync_sources(force: bool = False) -> str:
     else:
         await _init_chunks()
         return f"동기화 완료: {len(_chunks)}개 청크"
+
+
+@mcp.tool()
+async def search_icons(
+    query: str, icon_type: str | None = None, max_results: int = 10
+) -> str:
+    """토스 아이콘 카탈로그를 검색하고 타입별 추천 사용 코드를 안내합니다.
+
+    Args:
+        query: 검색어 (아이콘 이름/URL 일부)
+        icon_type: 타입 필터 (선택). "icon-*", "icn-*", "emoji/image"
+        max_results: 최대 결과 수 (기본 10, 최대 30)
+    """
+    if not _icon_items:
+        return (
+            "아이콘 카탈로그가 로드되지 않았습니다. "
+            "toss_mcp/data/toss_icons.json 파일을 확인해 주세요."
+        )
+
+    if not query.strip():
+        return "query는 비어 있을 수 없습니다."
+
+    normalized_icon_type = icon_type.lower() if icon_type else None
+    supported_types = {value.lower(): value for value in SUPPORTED_ICON_TYPES}
+    if normalized_icon_type and normalized_icon_type not in supported_types:
+        return (
+            "지원하지 않는 icon_type입니다. "
+            f"지원값: {', '.join(SUPPORTED_ICON_TYPES)}"
+        )
+
+    if max_results < 1:
+        return "max_results는 1 이상이어야 합니다."
+    max_results = min(max_results, 30)
+
+    results = search_icon_catalog(
+        _icon_items,
+        query=query,
+        icon_type=normalized_icon_type,
+        max_results=max_results,
+    )
+    if not results:
+        filter_text = f", type={icon_type}" if icon_type else ""
+        return f"'{query}'{filter_text} 조건에 대한 아이콘 검색 결과가 없습니다."
+
+    output_parts = []
+    for i, item in enumerate(results, 1):
+        output_parts.append(
+            f"### 결과 {i}\n"
+            f"- **이름**: `{item['name']}`\n"
+            f"- **타입**: `{item['type']}`\n"
+            f"- **소스(URL)**: {item['src']}\n"
+            f"- **매칭**: {item['match_count']}개 키워드 ({item['match_ratio']:.0%})\n"
+            f"- **권장 사용**: {get_item_usage_hint(item)}\n"
+        )
+
+    return (
+        f"'{query}' 아이콘 검색 결과 {len(results)}개\n\n"
+        + "\n".join(output_parts)
+        + "\n"
+        + ICON_USAGE_GUIDE
+    )
 
 
 def main():
