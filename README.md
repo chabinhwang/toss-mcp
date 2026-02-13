@@ -1,8 +1,8 @@
 # toss-mcp
 
-> AI 코딩 에이전트에게 토스 개발자 문서를 제공하는 MCP 서버
+> AI 코딩 에이전트에게 토스 개발자 문서 및 토스 기본 제공 아이콘 정보를 제공하는 MCP 서버
 
-[토스 개발자 문서](https://developers-apps-in-toss.toss.im)(앱인토스, TDS React Native, TDS Mobile)에 대한 **최신 내용** 을 자동으로 수집하고, AI가 검색할 수 있도록 제공하는 [Model Context Protocol (MCP)](https://modelcontextprotocol.io) 서버입니다.
+[토스 개발자 문서](https://developers-apps-in-toss.toss.im)(앱인토스, TDS React Native, TDS Mobile)에 대한 **최신 내용**  및 토스에서 제공하는 아이콘 들에 대한 정보를 AI가 검색할 수 있도록 제공하는 [Model Context Protocol (MCP)](https://modelcontextprotocol.io) 서버입니다.
 
 ## 주요 기능
 
