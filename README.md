@@ -6,13 +6,11 @@
 
 ## 주요 기능
 
-- 토스 개발자 문서 3개 소스 자동 수집 (앱인토스, TDS React Native, TDS Mobile)
-- 마크다운 헤더 기반 지능형 청킹 (H1 → H2 → H3 재귀 분할)
-- 2단계 키워드 검색 (정확 매칭 우선, 부분 매칭 폴백)
-- 토스 아이콘 카탈로그 검색 (`toss_mcp/data/toss_icons.json.gz`)
-- 아이콘 타입별 (`icon-*`, `icn-*`, `u1F...`) 추천 코드 가이드 제공
-- SHA256 해시 기반 캐시로 빠른 재시작
-- 비동기 병렬 수집 (동시 8개 요청)
+- AI 에이전트가 토스 공식 문서를 바로 검색해 답변에 활용할 수 있습니다.
+- 문서 검색 시 소스별 필터(`apps_in_toss`, `tds_react_native`, `tds_mobile`)를 적용할 수 있습니다.
+- 최신 문서가 필요할 때 `sync_sources`로 수동 동기화할 수 있습니다.
+- 토스 아이콘 카탈로그를 검색해 아이콘 이름/URL을 빠르게 찾을 수 있습니다.
+- 아이콘 타입(`icon-*`, `icn-*`, `u1F...`)에 맞는 권장 컴포넌트 사용법을 바로 안내받을 수 있습니다.
 
 ## 빠른 시작
 
@@ -21,9 +19,15 @@
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) (uvx 사용 시)
 
-### Claude Code
+### 원격 실행 (uvx)
 
-`~/.claude/settings.json`의 `mcpServers`에 추가:
+아래 클라이언트 설정은 모두 동일한 실행 정보를 사용합니다.
+- `command`: `uvx`
+- `args`: `["--from", "git+https://github.com/chabinhwang/toss-mcp", "toss-mcp"]`
+
+#### Claude Code
+
+설정 파일: `~/.claude/settings.json` (`mcpServers`에 추가)
 
 ```json
 {
@@ -34,9 +38,9 @@
 }
 ```
 
-### Codex
+#### Codex
 
-`~/.codex/config.toml`의 `mcp_servers`에 추가:
+설정 파일: `~/.codex/config.toml` (`mcp_servers`에 추가)
 
 ```toml
 [mcp_servers.toss-docs]
@@ -44,26 +48,9 @@ command = "uvx"
 args = ["--from", "git+https://github.com/chabinhwang/toss-mcp", "toss-mcp"]
 ```
 
-### Gemini CLI
+#### Gemini CLI
 
-`~/.gemini/settings.json`의 `mcpServers`에 추가:
-
-```json
-{
-  "mcpServers": {
-    "toss-docs": {
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp", "toss-mcp"]
-    }
-  }
-}
-```
-### Claude Desktop
-
-`claude_desktop_config.json`에 추가:
-
-<details>
-<summary>macOS: ~/Library/Application Support/Claude/claude_desktop_config.json</summary>
+설정 파일: `~/.gemini/settings.json` (`mcpServers`에 추가)
 
 ```json
 {
@@ -75,10 +62,13 @@ args = ["--from", "git+https://github.com/chabinhwang/toss-mcp", "toss-mcp"]
   }
 }
 ```
-</details>
+#### Claude Desktop
 
-<details>
-<summary>Windows: %APPDATA%\Claude\claude_desktop_config.json</summary>
+설정 파일:
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+`mcpServers`에 아래를 추가:
 
 ```json
 {
@@ -90,7 +80,6 @@ args = ["--from", "git+https://github.com/chabinhwang/toss-mcp", "toss-mcp"]
   }
 }
 ```
-</details>
 
 ### 로컬 설치 (개발용)
 
@@ -100,6 +89,8 @@ cd toss-mcp
 python3 -m venv .venv
 .venv/bin/pip install -e .
 ```
+
+설정 파일: MCP 클라이언트의 `mcpServers` 항목
 
 ```json
 {
@@ -158,6 +149,15 @@ python3 -m venv .venv
 
 - 이름이 `icon-`/`icn-`면 `name` 기반 컴포넌트 (`Icon`, `IconButton`, `Asset.Icon`)
 - 이름이 `u1F...`면 URL 기반 (`Asset.Image`, `Asset.ContentImage`)
+
+## 기술적 특징
+
+- 토스 개발자 문서 3개 소스 자동 수집 (앱인토스, TDS React Native, TDS Mobile)
+- 마크다운 헤더 기반 지능형 청킹 (H1 → H2 → H3 재귀 분할)
+- 2단계 키워드 검색 (정확 매칭 우선, 부분 매칭 폴백)
+- SHA256 해시 기반 캐시로 빠른 재시작
+- 비동기 병렬 수집 (동시 8개 요청)
+- 아이콘 카탈로그 압축 리소스(`toss_mcp/data/toss_icons.json.gz`) 로드 지원
 
 ## 동작 방식
 
