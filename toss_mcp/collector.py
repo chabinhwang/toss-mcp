@@ -119,3 +119,81 @@ async def fetch_single_source_raw(url: str) -> str | None:
     """단일 URL의 원본 텍스트를 반환한다 (해시 비교용)."""
     async with httpx.AsyncClient() as client:
         return await fetch_text(client, url)
+
+
+async def check_source_etags(
+    stored_etags: dict[str, str],
+) -> tuple[dict[str, str], bool]:
+    """각 소스의 ETag를 확인하여 변경 여부를 판단한다.
+
+    Returns:
+        (new_etags, needs_refresh): 새 ETag 딕셔너리와 갱신 필요 여부
+    """
+    new_etags: dict[str, str] = {}
+    changed = False
+
+    async with httpx.AsyncClient() as client:
+        for key, source in SOURCES.items():
+            url = source["llms_url"]
+            stored_etag = stored_etags.get(key)
+            headers = {}
+            if stored_etag:
+                headers["If-None-Match"] = stored_etag
+
+            try:
+                resp = await client.get(
+                    url, headers=headers, timeout=TIMEOUT, follow_redirects=True
+                )
+
+                if resp.status_code == 304:
+                    # 서버가 304 반환 → 변경 없음
+                    logger.info("ETag 304 (변경 없음): %s", key)
+                    new_etags[key] = stored_etag  # type: ignore[assignment]
+                    continue
+
+                resp.raise_for_status()
+                etag = resp.headers.get("etag")
+                if etag:
+                    new_etags[key] = etag
+                    if stored_etag and etag == stored_etag:
+                        # 서버가 304를 지원하지 않지만 ETag 동일 → 변경 없음
+                        logger.info("ETag 일치 (변경 없음): %s", key)
+                    else:
+                        logger.info(
+                            "ETag 불일치 (변경 감지): %s [%s → %s]",
+                            key,
+                            stored_etag,
+                            etag,
+                        )
+                        changed = True
+                else:
+                    # ETag 없음 → 판단 불가, 안전하게 갱신
+                    logger.info("ETag 없음 (갱신 필요): %s", key)
+                    changed = True
+
+            except Exception as e:
+                logger.warning("ETag 확인 실패: %s → %s", key, e)
+                changed = True
+
+    return new_etags, changed
+
+
+async def collect_etags() -> dict[str, str]:
+    """모든 소스의 현재 ETag를 수집한다."""
+    etags: dict[str, str] = {}
+    async with httpx.AsyncClient() as client:
+        for key, source in SOURCES.items():
+            try:
+                resp = await client.get(
+                    source["llms_url"], timeout=TIMEOUT, follow_redirects=True
+                )
+                resp.raise_for_status()
+                etag = resp.headers.get("etag")
+                if etag:
+                    etags[key] = etag
+                    logger.info("ETag 수집: %s → %s", key, etag)
+                else:
+                    logger.info("ETag 없음: %s", key)
+            except Exception as e:
+                logger.warning("ETag 수집 실패: %s → %s", key, e)
+    return etags

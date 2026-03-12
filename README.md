@@ -23,7 +23,7 @@
 
 아래 클라이언트 설정은 모두 동일한 실행 정보를 사용합니다.
 - `command`: `uvx`
-- `args`: `["--from", "git+https://github.com/chabinhwang/toss-mcp", "toss-mcp"]`
+- `args`: `["--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]`
 
 #### Claude Code
 
@@ -33,7 +33,7 @@
 {
   "toss-docs": {
     "command": "uvx",
-    "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp", "toss-mcp"]
+    "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]
   }
 }
 ```
@@ -45,7 +45,7 @@
 ```toml
 [mcp_servers.toss-docs]
 command = "uvx"
-args = ["--from", "git+https://github.com/chabinhwang/toss-mcp", "toss-mcp"]
+args = ["--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]
 ```
 
 #### Gemini CLI
@@ -57,7 +57,7 @@ args = ["--from", "git+https://github.com/chabinhwang/toss-mcp", "toss-mcp"]
   "mcpServers": {
     "toss-docs": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp", "toss-mcp"]
+      "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]
     }
   }
 }
@@ -75,7 +75,7 @@ args = ["--from", "git+https://github.com/chabinhwang/toss-mcp", "toss-mcp"]
   "mcpServers": {
     "toss-docs": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp", "toss-mcp"]
+      "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]
     }
   }
 }

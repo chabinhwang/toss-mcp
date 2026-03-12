@@ -5,7 +5,13 @@ from contextlib import asynccontextmanager
 
 from mcp.server.fastmcp import FastMCP
 
-from .collector import collect_all, fetch_single_source_raw, SOURCES
+from .collector import (
+    collect_all,
+    fetch_single_source_raw,
+    check_source_etags,
+    collect_etags,
+    SOURCES,
+)
 from .chunker import chunk_all
 from .searcher import search
 from .icons import (
@@ -19,6 +25,8 @@ from .cache import (
     load_chunks,
     save_chunks,
     update_hashes,
+    load_etags,
+    save_etags,
 )
 
 logging.basicConfig(
@@ -36,22 +44,51 @@ async def _init_chunks():
     """캐시 또는 수집으로 청크를 초기화한다."""
     global _chunks
 
-    # 1) 캐시가 있으면 즉시 로드 (빠른 기동 우선)
     cached = load_chunks()
+
     if cached:
+        stored_etags = load_etags()
+
+        if stored_etags:
+            # 캐시 + ETag 존재 → ETag 비교로 변경 감지
+            logger.info("ETag 기반 변경 감지 시작...")
+            new_etags, needs_refresh = await check_source_etags(stored_etags)
+
+            if not needs_refresh:
+                _chunks = cached
+                logger.info("ETag 변경 없음, 캐시 사용: %d개 청크", len(_chunks))
+                return
+
+            # 변경 감지 → 전체 재수집
+            logger.info("ETag 변경 감지, 문서 재수집 시작...")
+            collected = await collect_all()
+            _chunks = chunk_all(collected)
+            save_chunks(_chunks)
+            raw_texts = {k: v["raw_text"] for k, v in collected.items()}
+            update_hashes(raw_texts)
+            save_etags(new_etags)
+            logger.info("재수집 완료: %d개 청크", len(_chunks))
+            return
+
+        # 캐시 있지만 ETag 없음 (이전 포맷) → 캐시 사용 + ETag 저장
         _chunks = cached
-        logger.info("캐시에서 %d개 청크 로드 완료", len(_chunks))
+        logger.info("캐시에서 %d개 청크 로드 (ETag 없음, 다음 기동용 수집)", len(_chunks))
+        etags = await collect_etags()
+        if etags:
+            save_etags(etags)
         return
 
-    # 2) 캐시 없음 → 전체 수집 + 청킹
+    # 캐시 없음 → 전체 수집 + 청킹
     logger.info("캐시 없음, 문서 수집 시작...")
     collected = await collect_all()
     _chunks = chunk_all(collected)
 
-    # 3) 캐시 저장 + 해시 갱신
     save_chunks(_chunks)
     raw_texts = {k: v["raw_text"] for k, v in collected.items()}
     update_hashes(raw_texts)
+    etags = await collect_etags()
+    if etags:
+        save_etags(etags)
     logger.info("초기화 완료: %d개 청크", len(_chunks))
 
 
@@ -131,6 +168,9 @@ async def sync_sources(force: bool = False) -> str:
         save_chunks(_chunks)
         if raw_texts:
             update_hashes(raw_texts)
+        etags = await collect_etags()
+        if etags:
+            save_etags(etags)
         return f"강제 동기화 완료: {len(_chunks)}개 청크"
     else:
         await _init_chunks()

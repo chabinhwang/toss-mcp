@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 CACHE_DIR = Path.home() / ".toss-mcp-cache"
 CHUNKS_FILE = CACHE_DIR / "chunks.json"
 HASHES_FILE = CACHE_DIR / "hashes.json"
+ETAGS_FILE = CACHE_DIR / "etags.json"
 
 
 def _ensure_dir():
@@ -73,3 +74,17 @@ def update_hashes(raw_texts: dict[str, str]):
     """현재 원본 텍스트의 해시를 저장한다."""
     hashes = {key: compute_hash(text) for key, text in raw_texts.items()}
     save_hashes(hashes)
+
+
+def load_etags() -> dict[str, str]:
+    """저장된 ETag를 로드한다."""
+    _ensure_dir()
+    if ETAGS_FILE.exists():
+        return json.loads(ETAGS_FILE.read_text("utf-8"))
+    return {}
+
+
+def save_etags(etags: dict[str, str]):
+    """ETag를 저장한다."""
+    _ensure_dir()
+    ETAGS_FILE.write_text(json.dumps(etags, ensure_ascii=False), "utf-8")
