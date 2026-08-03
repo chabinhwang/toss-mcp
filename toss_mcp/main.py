@@ -3,7 +3,7 @@
 import logging
 from contextlib import asynccontextmanager
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from .collector import (
     collect_all,
@@ -103,14 +103,14 @@ def _init_icons():
 
 
 @asynccontextmanager
-async def lifespan(server: FastMCP):
+async def lifespan(server: MCPServer):
     """서버 시작 시 문서를 로드한다."""
     await _init_chunks()
     _init_icons()
     yield
 
 
-mcp = FastMCP(
+mcp = MCPServer(
     "toss-docs",
     instructions="토스 개발자 문서 검색 + 토스 아이콘 카탈로그 검색 도구",
     lifespan=lifespan,
