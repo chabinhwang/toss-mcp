@@ -7,8 +7,10 @@
 ## 주요 기능
 
 - AI 에이전트가 토스 공식 문서를 바로 검색해 답변에 활용할 수 있습니다.
-- 문서 검색 시 소스별 필터(`apps_in_toss`, `tds_react_native`, `tds_mobile`)를 적용할 수 있습니다.
+- 문서 검색 시 공식 문서군 또는 내장 배포 가이드별 필터를 적용할 수 있습니다.
+- `list_sources`로 실제 수집 중인 `llms.txt`/`llms-full.txt` 원천과 청크 수를 확인할 수 있습니다.
 - 최신 문서가 필요할 때 `sync_sources`로 수동 동기화할 수 있습니다.
+- 앱인토스 번들의 환경값 검증부터 CLI 업로드, 콘솔 검토·출시까지 범용 배포 체크리스트를 제공합니다.
 - 토스 아이콘 카탈로그를 검색해 아이콘 이름/URL을 빠르게 찾을 수 있습니다.
 - 아이콘 타입(`icon-*`, `icn-*`, `u1F...`)에 맞는 권장 컴포넌트 사용법을 바로 안내받을 수 있습니다.
 
@@ -23,7 +25,7 @@
 
 아래 클라이언트 설정은 모두 동일한 실행 정보를 사용합니다.
 - `command`: `uvx`
-- `args`: `["--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]`
+- `args`: `["--from", "git+https://github.com/chabinhwang/toss-mcp@v2.3.0", "toss-mcp"]`
 
 #### Claude Code
 
@@ -33,7 +35,7 @@
 {
   "toss-docs": {
     "command": "uvx",
-    "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]
+    "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp@v2.3.0", "toss-mcp"]
   }
 }
 ```
@@ -45,7 +47,7 @@
 ```toml
 [mcp_servers.toss-docs]
 command = "uvx"
-args = ["--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]
+args = ["--from", "git+https://github.com/chabinhwang/toss-mcp@v2.3.0", "toss-mcp"]
 ```
 
 #### Gemini CLI
@@ -57,7 +59,7 @@ args = ["--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"
   "mcpServers": {
     "toss-docs": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]
+      "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp@v2.3.0", "toss-mcp"]
     }
   }
 }
@@ -75,7 +77,7 @@ args = ["--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"
   "mcpServers": {
     "toss-docs": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]
+      "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp@v2.3.0", "toss-mcp"]
     }
   }
 }
@@ -114,6 +116,7 @@ python3 -m venv .venv
 |----------|------|------|------|
 | `query` | string | O | 검색어 (공백으로 구분된 키워드) |
 | `source` | string | X | 소스 필터 (아래 표 참고) |
+| `max_results` | number | X | 최대 결과 수 (기본 10, 최대 30) |
 
 **소스 목록**
 
@@ -122,6 +125,23 @@ python3 -m venv .venv
 | `apps_in_toss` | 앱인토스 |
 | `tds_react_native` | TDS React Native |
 | `tds_mobile` | TDS Mobile |
+| `deployment_guide` | 범용 앱인토스 배포 실전 가이드(내장 보완 문서) |
+
+### `list_sources`
+
+검색 가능한 소스, 공식 index/full 원천 URL, 수집 방식, 현재 검색 청크 수를 보여줍니다.
+
+**현재 공식 원천**
+
+| 문서군 | index | full | 검색 문서 구성 |
+|---|---|---|---|
+| 앱인토스 | `https://developers-apps-in-toss.toss.im/llms.txt` | `https://developers-apps-in-toss.toss.im/llms-full.txt` | index의 개별 Markdown 페이지를 수집하고, 불완전할 때 full로 폴백 |
+| TDS React Native | `https://tossmini-docs.toss.im/tds-react-native/llms.txt` | `https://tossmini-docs.toss.im/tds-react-native/llms-full.txt` | full을 검색 대상으로 사용 |
+| TDS Mobile | `https://tossmini-docs.toss.im/tds-mobile/llms.txt` | `https://tossmini-docs.toss.im/tds-mobile/llms-full.txt` | full을 검색 대상으로 사용 |
+
+index와 full은 모두 변경 감지에 사용하지만, 같은 내용을 검색 결과에 중복 저장하지는 않습니다. 확인 결과 `tossmini-docs.toss.im` 도메인 루트와 `/tds-web/`에는 현재 별도 `llms.txt`/`llms-full.txt`가 없습니다.
+
+별도 공식 개발 문서인 [토스페이먼츠 개발자센터](https://docs.tosspayments.com/llms.txt)도 확인했지만, 앱인토스/TDS와 다른 제품군이고 [전용 공식 MCP](https://docs.tosspayments.com/guides/v2/get-started/llms-guide)를 제공하므로 이 서버에는 합치지 않았습니다. 이 서버의 범위는 앱인토스 미니앱과 그 TDS 문서로 유지합니다.
 
 ### `sync_sources`
 
@@ -152,53 +172,53 @@ python3 -m venv .venv
 
 ## 기술적 특징
 
-- 토스 개발자 문서 3개 소스 자동 수집 (앱인토스, TDS React Native, TDS Mobile)
+- 토스 개발자 공식 문서 3개 문서군·6개 index/full 원천 자동 추적
+- ETag → Last-Modified → 본문 SHA256 순서의 변경 감지(ETag 없는 원천 지원)
+- 앱인토스 개별 Markdown 페이지 수집 실패 시 루트 `llms-full.txt` 폴백
 - 마크다운 헤더 기반 지능형 청킹 (H1 → H2 → H3 재귀 분할)
+- 줄바꿈 없는 긴 HTML/table 행까지 청크 최대 3,000자 보장
 - 2단계 키워드 검색 (정확 매칭 우선, 부분 매칭 폴백)
-- ETag 기반 변경 감지 + 로컬 캐시로 빠른 재시작
+- 원천 validator 기반 변경 감지 + 로컬 캐시로 빠른 재시작
 - 비동기 병렬 수집 (동시 8개 요청)
+- 패키지 내장 범용 앱인토스 배포 실전 가이드
 - 아이콘 카탈로그 압축 리소스(`toss_mcp/data/toss_icons.json.gz`) 로드 지원
 
 ## 동작 방식
 
 ```
-llms.txt / llms-full.txt 다운로드
+공식 index/full 원천 6개 변경 감지
        ↓
-  링크 파싱 (seed) 또는 그대로 사용 (full)
-       ↓
-  하위 페이지 병렬 수집 (동시 8개)
-       ↓
+  앱인토스: index 링크의 개별 페이지 병렬 수집
+  TDS 2종: full 문서 수집
+       ↓ (개별 페이지 누락 시 앱인토스 full 폴백)
   마크다운 헤더 기반 청킹 (최대 3,000자)
        ↓
-  로컬 캐시 저장 (~/.toss-mcp-cache/)
+  공식 문서 로컬 캐시 (~/.toss-mcp-cache/)
+       +
+  패키지 내장 배포 가이드
        ↓
-  키워드 검색 제공
+  소스 필터 가능한 키워드 검색
 ```
 
-- **캐시**: 시작 시 소스별 ETag를 비교해 변경 여부를 확인하고, 변경이 없으면 캐시에서 즉시 로드합니다. 변경이 감지된 경우에만 전체 재수집합니다.
+- **캐시**: 시작 시 각 문서군의 index와 full 원천 validator를 비교하고, 변경이 없으면 캐시에서 로드합니다. ETag나 Last-Modified가 없으면 본문 SHA256을 비교합니다.
+- **부분 장애**: 갱신 중 특정 문서군 수집에 실패하면 해당 문서군의 기존 캐시를 유지합니다.
+- **내장 가이드**: 배포 가이드는 패키지에서 매번 로드하므로 공식 문서 캐시에 섞이거나 오래된 캐시에 가려지지 않습니다.
 - **재동기화**: `sync_sources(force=True)` 호출 또는 캐시 디렉토리 삭제 후 재시작하면 됩니다.
 
-## 성능 벤치마크
+## 공식 원천 실수집 검증
 
-2026-03-13 기준으로, 현재 로컬에서 실행 중인 MCP와 분리하기 위해 매 실행마다 임시 `HOME`을 사용해 캐시를 격리한 뒤 실측했습니다.
+2026-08-10에 캐시 없는 상태로 공식 원천을 직접 수집하고 검색까지 확인한 결과입니다. 문서가 추가·삭제되면 개수는 달라질 수 있습니다.
 
-- 실행 경로: 실제 서버 시작 시점과 동일하게 `lifespan` 기준 `_init_chunks()` + `_init_icons()`까지 측정
-- 반복 횟수: 각 시나리오 10회
-- 시나리오 A: `full_recollect_boot`
-  캐시가 없는 상태로 부팅해서 `llms.txt` / `llms-full.txt`와 하위 문서를 전부 다시 수집
-- 시나리오 B: `etag_compare_boot`
-  같은 임시 캐시에서 한 번 받아둔 뒤 다시 부팅해서 ETag만 비교하고, 변경이 없으면 재다운로드 없이 캐시 사용
-- 참고: `etag_compare_boot`는 10/10회 모두 실제로 "변경 없음, 캐시 사용" 경로를 탔습니다.
+| 소스 | 수집 문서 | 검색 청크 |
+|---|---:|---:|
+| `apps_in_toss` | 개별 Markdown 241개 | 1,480개 |
+| `tds_react_native` | full 문서 1개 | 177개 |
+| `tds_mobile` | full 문서 1개 | 370개 |
+| `deployment_guide` | 내장 문서 1개 | 1개 |
 
-| 시나리오 | 평균 | 중앙값 | 최소 | 최대 |
-|---|---:|---:|---:|---:|
-| `full_recollect_boot` | 4.048s | 3.878s | 3.667s | 5.363s |
-| `etag_compare_boot` | 0.851s | 0.803s | 0.723s | 1.168s |
-
-- 평균 기준 차이: `3.197s`
-- 중앙값 기준 차이: `3.075s`
-- 평균 기준으로 `etag_compare_boot`가 약 `4.8배` 빠름
-- 해석: 토스 MCP는 전체 재수집보다, 지금 코드처럼 ETag 비교 후 변경이 없으면 캐시를 사용하는 부팅 경로가 훨씬 빠릅니다.
+- 6개 index/full 원천이 모두 HTTP 200으로 응답하고 수집됐습니다.
+- 연속으로 validator를 계산했을 때 6개 모두 같은 값으로 판정됐습니다.
+- `ait deploy 검토 요청`, `미니앱 출시 롤백`, `IconButton` 검색을 각 대상 소스에서 확인했습니다.
 
 ## 프로젝트 구조
 
@@ -214,9 +234,11 @@ toss-mcp/
     ├── chunker.py       # 마크다운 청킹
     ├── searcher.py      # 키워드 검색
     ├── icons.py         # 아이콘 카탈로그 로드/검색 + 타입별 추천
+    ├── knowledge.py     # 패키지 내장 보완 가이드 로드
     ├── cache.py         # JSON 캐시 + 해시 관리
     └── data/
-        └── toss_icons.json.gz
+        ├── toss_icons.json.gz
+        └── deployment_guide.md
 ```
 
 ## 라이선스
