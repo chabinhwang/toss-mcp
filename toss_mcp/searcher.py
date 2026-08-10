@@ -17,7 +17,7 @@ def search(
 
     - 모든 키워드 포함 → 정확 매칭 (우선순위 높음)
     - 일부 키워드 포함 → 부분 매칭 (폴백)
-    - source 필터 지원: "apps_in_toss", "tds_react_native", "tds_mobile"
+    - source 필터 지원: 청크의 source 키와 정확히 일치하는 소스
     """
     keywords = query.lower().split()
     if not keywords:

@@ -1,27 +1,35 @@
-"""토스 API 문서 수집기"""
+"""토스 공식 개발자 문서 수집기."""
 
-import re
 import asyncio
+import hashlib
 import logging
+import re
+from urllib.parse import urljoin
+
 import httpx
 
 logger = logging.getLogger(__name__)
 
+# 한 문서군에 index와 full 원천이 모두 있으면 둘 다 변경 감지에 사용한다.
+# 실제 검색 문서는 중복을 피하기 위해 collection_type에 맞는 한 경로만 수집한다.
 SOURCES = {
     "apps_in_toss": {
         "name": "앱인토스",
-        "llms_url": "https://developers-apps-in-toss.toss.im/llms.txt",
-        "type": "seed",  # llms.txt는 목차 → 하위 페이지 순회
+        "index_url": "https://developers-apps-in-toss.toss.im/llms.txt",
+        "full_url": "https://developers-apps-in-toss.toss.im/llms-full.txt",
+        "collection_type": "seed",
     },
     "tds_react_native": {
         "name": "TDS React Native",
-        "llms_url": "https://tossmini-docs.toss.im/tds-react-native/llms-full.txt",
-        "type": "full",  # 통합 마크다운
+        "index_url": "https://tossmini-docs.toss.im/tds-react-native/llms.txt",
+        "full_url": "https://tossmini-docs.toss.im/tds-react-native/llms-full.txt",
+        "collection_type": "full",
     },
     "tds_mobile": {
         "name": "TDS Mobile",
-        "llms_url": "https://tossmini-docs.toss.im/tds-mobile/llms-full.txt",
-        "type": "full",
+        "index_url": "https://tossmini-docs.toss.im/tds-mobile/llms.txt",
+        "full_url": "https://tossmini-docs.toss.im/tds-mobile/llms-full.txt",
+        "collection_type": "full",
     },
 }
 
@@ -29,171 +37,264 @@ TIMEOUT = 30
 CONCURRENCY = 8
 
 
+def source_urls(source: dict) -> list[tuple[str, str]]:
+    """소스 설정에 등록된 (역할, URL)을 중복 없이 반환한다."""
+    urls: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for role in ("index", "full"):
+        url = source.get(f"{role}_url")
+        if url and url not in seen:
+            urls.append((role, url))
+            seen.add(url)
+    return urls
+
+
+def source_validator_key(source_key: str, role: str) -> str:
+    """캐시에 저장할 원천별 validator 키를 만든다."""
+    return f"{source_key}:{role}"
+
+
 async def fetch_text(client: httpx.AsyncClient, url: str) -> str | None:
-    """URL에서 텍스트를 다운로드한다. 실패 시 None 반환."""
+    """URL에서 텍스트를 다운로드한다. 실패 시 None을 반환한다."""
     try:
         resp = await client.get(url, timeout=TIMEOUT, follow_redirects=True)
         resp.encoding = "utf-8"
         resp.raise_for_status()
         return resp.text
-    except Exception as e:
-        logger.warning("fetch failed: %s → %s", url, e)
+    except httpx.HTTPError as exc:
+        logger.warning("fetch failed: %s → %s", url, exc)
         return None
 
 
-def parse_links(llms_txt: str) -> list[dict[str, str]]:
-    """llms.txt에서 [제목](URL) 형태의 링크를 파싱한다."""
-    pattern = re.compile(r"\[([^\]]+)\]\((https?://[^\)]+)\)")
-    results = []
+def parse_links(llms_txt: str, base_url: str | None = None) -> list[dict[str, str]]:
+    """llms.txt에서 Markdown 링크를 파싱하고 중복 URL을 제거한다."""
+    pattern = re.compile(r"\[([^\]]+)\]\(([^\s\)]+)\)")
+    results: list[dict[str, str]] = []
+    seen: set[str] = set()
+
     for match in pattern.finditer(llms_txt):
-        title, url = match.group(1), match.group(2)
+        title, raw_url = match.group(1), match.group(2)
+        if raw_url.startswith("#"):
+            continue
+        url = urljoin(base_url, raw_url) if base_url else raw_url
+        if not url.startswith(("http://", "https://")) or url in seen:
+            continue
         results.append({"title": title, "url": url})
+        seen.add(url)
+
     return results
 
 
 async def fetch_seed_pages(
-    client: httpx.AsyncClient, links: list[dict[str, str]]
+    client: httpx.AsyncClient,
+    source_key: str,
+    links: list[dict[str, str]],
 ) -> list[dict]:
-    """앱인토스 하위 페이지들을 병렬로 수집한다."""
+    """llms.txt가 가리키는 하위 페이지들을 순서를 보존해 병렬 수집한다."""
     sem = asyncio.Semaphore(CONCURRENCY)
-    documents = []
 
-    async def _fetch_one(link: dict[str, str]):
+    async def _fetch_one(link: dict[str, str]) -> dict | None:
         async with sem:
             text = await fetch_text(client, link["url"])
-            if text:
-                documents.append(
-                    {
-                        "source": "apps_in_toss",
-                        "url": link["url"],
-                        "title": link["title"],
-                        "content": text,
-                    }
-                )
+            if text is None:
+                return None
+            return {
+                "source": source_key,
+                "url": link["url"],
+                "title": link["title"],
+                "content": text,
+            }
 
-    await asyncio.gather(*[_fetch_one(link) for link in links])
-    return documents
+    fetched = await asyncio.gather(*[_fetch_one(link) for link in links])
+    return [document for document in fetched if document is not None]
+
+
+async def _collect_source(
+    client: httpx.AsyncClient,
+    source_key: str,
+    source: dict,
+) -> tuple[str, dict] | None:
+    """단일 문서군을 설정된 방식으로 수집한다."""
+    collection_type = source["collection_type"]
+    index_url = source.get("index_url")
+    full_url = source.get("full_url")
+
+    if collection_type == "full":
+        if not full_url:
+            logger.error("full 원천이 설정되지 않음: %s", source_key)
+            return None
+        raw = await fetch_text(client, full_url)
+        if raw is None:
+            logger.error("소스 %s 수집 실패", source_key)
+            return None
+        return source_key, {
+            "raw_text": raw,
+            "documents": [
+                {
+                    "source": source_key,
+                    "url": full_url,
+                    "title": source["name"],
+                    "content": raw,
+                }
+            ],
+        }
+
+    if not index_url:
+        logger.error("index 원천이 설정되지 않음: %s", source_key)
+        return None
+
+    raw_index = await fetch_text(client, index_url)
+    if raw_index is not None:
+        links = parse_links(raw_index, base_url=index_url)
+        logger.info("%s 링크 %d개 발견", source_key, len(links))
+        documents = await fetch_seed_pages(client, source_key, links)
+        if links and len(documents) == len(links):
+            return source_key, {
+                "raw_text": raw_index,
+                "documents": documents,
+            }
+        logger.warning(
+            "%s 하위 페이지 수집 불완전 (%d/%d), full 원천으로 폴백",
+            source_key,
+            len(documents),
+            len(links),
+        )
+
+    if full_url:
+        raw_full = await fetch_text(client, full_url)
+        if raw_full is not None:
+            return source_key, {
+                "raw_text": raw_full,
+                "documents": [
+                    {
+                        "source": source_key,
+                        "url": full_url,
+                        "title": source["name"],
+                        "content": raw_full,
+                    }
+                ],
+            }
+
+    logger.error("소스 %s의 index/full 원천을 모두 수집하지 못함", source_key)
+    return None
 
 
 async def collect_all() -> dict:
-    """모든 소스에서 문서를 수집한다. 반환: {source_key: {raw_text, documents}}"""
-    result = {}
+    """모든 공식 소스를 병렬 수집한다."""
     async with httpx.AsyncClient() as client:
-        for key, source in SOURCES.items():
-            raw = await fetch_text(client, source["llms_url"])
-            if raw is None:
-                logger.error("소스 %s 수집 실패", key)
-                continue
+        collected = await asyncio.gather(
+            *[
+                _collect_source(client, source_key, source)
+                for source_key, source in SOURCES.items()
+            ]
+        )
 
-            if source["type"] == "full":
-                # 통합 마크다운: 그대로 전달
-                result[key] = {
-                    "raw_text": raw,
-                    "documents": [
-                        {
-                            "source": key,
-                            "url": source["llms_url"],
-                            "title": source["name"],
-                            "content": raw,
-                        }
-                    ],
-                }
-            else:
-                # seed: llms.txt 파싱 후 하위 페이지 순회
-                links = parse_links(raw)
-                logger.info("앱인토스 링크 %d개 발견", len(links))
-                documents = await fetch_seed_pages(client, links)
-                result[key] = {
-                    "raw_text": raw,
-                    "documents": documents,
-                }
-
+    result = dict(item for item in collected if item is not None)
     logger.info(
         "수집 완료: %s",
-        {k: len(v["documents"]) for k, v in result.items()},
+        {key: len(value["documents"]) for key, value in result.items()},
     )
     return result
 
 
-async def fetch_single_source_raw(url: str) -> str | None:
-    """단일 URL의 원본 텍스트를 반환한다 (해시 비교용)."""
-    async with httpx.AsyncClient() as client:
-        return await fetch_text(client, url)
+def _response_validator(resp: httpx.Response) -> str:
+    """ETag가 없는 공식 원천도 비교할 수 있는 안정적인 validator를 만든다."""
+    etag = resp.headers.get("etag")
+    if etag:
+        return f"etag:{etag}"
+
+    last_modified = resp.headers.get("last-modified")
+    if last_modified:
+        return f"last-modified:{last_modified}"
+
+    digest = hashlib.sha256(resp.content).hexdigest()
+    return f"sha256:{digest}"
+
+
+def _conditional_headers(stored_validator: str | None) -> dict[str, str]:
+    if not stored_validator:
+        return {}
+    if stored_validator.startswith("etag:"):
+        return {"If-None-Match": stored_validator.removeprefix("etag:")}
+    if stored_validator.startswith("last-modified:"):
+        return {"If-Modified-Since": stored_validator.removeprefix("last-modified:")}
+    return {}
+
+
+async def _check_single_validator(
+    client: httpx.AsyncClient,
+    validator_key: str,
+    url: str,
+    stored_validator: str | None,
+) -> tuple[str, str | None, bool]:
+    """원천 하나의 validator를 비교한다."""
+    try:
+        resp = await client.get(
+            url,
+            headers=_conditional_headers(stored_validator),
+            timeout=TIMEOUT,
+            follow_redirects=True,
+        )
+        if resp.status_code == 304 and stored_validator:
+            logger.info("validator 304 (변경 없음): %s", validator_key)
+            return validator_key, stored_validator, False
+
+        resp.raise_for_status()
+        validator = _response_validator(resp)
+        changed = validator != stored_validator
+        logger.info(
+            "validator %s: %s",
+            "변경 감지" if changed else "일치",
+            validator_key,
+        )
+        return validator_key, validator, changed
+    except httpx.HTTPError as exc:
+        logger.warning("validator 확인 실패: %s → %s", validator_key, exc)
+        return validator_key, stored_validator, True
 
 
 async def check_source_etags(
     stored_etags: dict[str, str],
 ) -> tuple[dict[str, str], bool]:
-    """각 소스의 ETag를 확인하여 변경 여부를 판단한다.
+    """모든 index/full 원천의 validator를 확인해 변경 여부를 판단한다.
 
-    Returns:
-        (new_etags, needs_refresh): 새 ETag 딕셔너리와 갱신 필요 여부
+    함수명과 캐시 파일명은 이전 버전 호환을 위해 etag를 유지하지만, 실제 값은
+    ETag → Last-Modified → SHA256 순서로 만든 validator다.
     """
-    new_etags: dict[str, str] = {}
-    changed = False
-
     async with httpx.AsyncClient() as client:
-        for key, source in SOURCES.items():
-            url = source["llms_url"]
-            stored_etag = stored_etags.get(key)
-            headers = {}
-            if stored_etag:
-                headers["If-None-Match"] = stored_etag
-
-            try:
-                resp = await client.get(
-                    url, headers=headers, timeout=TIMEOUT, follow_redirects=True
+        checks = await asyncio.gather(
+            *[
+                _check_single_validator(
+                    client,
+                    source_validator_key(source_key, role),
+                    url,
+                    stored_etags.get(source_validator_key(source_key, role)),
                 )
+                for source_key, source in SOURCES.items()
+                for role, url in source_urls(source)
+            ]
+        )
 
-                if resp.status_code == 304:
-                    # 서버가 304 반환 → 변경 없음
-                    logger.info("ETag 304 (변경 없음): %s", key)
-                    new_etags[key] = stored_etag  # type: ignore[assignment]
-                    continue
-
-                resp.raise_for_status()
-                etag = resp.headers.get("etag")
-                if etag:
-                    new_etags[key] = etag
-                    if stored_etag and etag == stored_etag:
-                        # 서버가 304를 지원하지 않지만 ETag 동일 → 변경 없음
-                        logger.info("ETag 일치 (변경 없음): %s", key)
-                    else:
-                        logger.info(
-                            "ETag 불일치 (변경 감지): %s [%s → %s]",
-                            key,
-                            stored_etag,
-                            etag,
-                        )
-                        changed = True
-                else:
-                    # ETag 없음 → 판단 불가, 안전하게 갱신
-                    logger.info("ETag 없음 (갱신 필요): %s", key)
-                    changed = True
-
-            except Exception as e:
-                logger.warning("ETag 확인 실패: %s → %s", key, e)
-                changed = True
-
-    return new_etags, changed
+    new_etags = {
+        key: validator for key, validator, _ in checks if validator is not None
+    }
+    return new_etags, any(changed for _, _, changed in checks)
 
 
 async def collect_etags() -> dict[str, str]:
-    """모든 소스의 현재 ETag를 수집한다."""
-    etags: dict[str, str] = {}
+    """모든 index/full 원천의 현재 validator를 수집한다."""
     async with httpx.AsyncClient() as client:
-        for key, source in SOURCES.items():
-            try:
-                resp = await client.get(
-                    source["llms_url"], timeout=TIMEOUT, follow_redirects=True
+        checks = await asyncio.gather(
+            *[
+                _check_single_validator(
+                    client,
+                    source_validator_key(source_key, role),
+                    url,
+                    None,
                 )
-                resp.raise_for_status()
-                etag = resp.headers.get("etag")
-                if etag:
-                    etags[key] = etag
-                    logger.info("ETag 수집: %s → %s", key, etag)
-                else:
-                    logger.info("ETag 없음: %s", key)
-            except Exception as e:
-                logger.warning("ETag 수집 실패: %s → %s", key, e)
-    return etags
+                for source_key, source in SOURCES.items()
+                for role, url in source_urls(source)
+            ]
+        )
+
+    return {key: validator for key, validator, _ in checks if validator is not None}

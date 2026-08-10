@@ -1,7 +1,7 @@
 """마크다운 문서를 청크로 분리한다."""
 
-import re
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +101,16 @@ def _split_by_lines(text: str) -> list[str]:
     chunks = []
     current = ""
     for line in lines:
+        # GitBook 문서에는 줄바꿈 없는 긴 HTML/table 행이 있을 수 있다.
+        if len(line) > MAX_CHUNK_LEN:
+            if current.strip():
+                chunks.append(current.strip())
+                current = ""
+            chunks.extend(
+                line[start : start + MAX_CHUNK_LEN]
+                for start in range(0, len(line), MAX_CHUNK_LEN)
+            )
+            continue
         if len(current) + len(line) + 1 > MAX_CHUNK_LEN and current:
             chunks.append(current.strip())
             current = line
@@ -149,7 +159,7 @@ def chunk_all(collected: dict) -> list[dict]:
     반환: [{source, url, header, content}]
     """
     all_chunks = []
-    for source_key, data in collected.items():
+    for data in collected.values():
         for doc in data["documents"]:
             chunks = chunk_document(doc)
             all_chunks.extend(chunks)
