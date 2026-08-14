@@ -1,8 +1,8 @@
 # toss-mcp
 
-> AI 코딩 에이전트에게 토스 개발자 문서 및 토스 기본 제공 아이콘 정보를 제공하는 MCP 서버
+> AI 코딩 에이전트에게 토스 개발자 문서, 기본 제공 아이콘, 공식 Apps in Toss 예제를 제공하는 MCP 서버
 
-[토스 개발자 문서](https://developers-apps-in-toss.toss.im)(앱인토스, TDS React Native, TDS Mobile)에 대한 **최신 내용**  및 토스에서 제공하는 아이콘 들에 대한 정보를 AI가 검색할 수 있도록 제공하는 [Model Context Protocol (MCP)](https://modelcontextprotocol.io) 서버입니다.
+[토스 개발자 문서](https://developers-apps-in-toss.toss.im)(앱인토스, TDS React Native, TDS Mobile)의 **최신 내용**, 토스 기본 제공 아이콘, [공식 Apps in Toss 예제](https://github.com/toss/apps-in-toss-examples)를 AI가 검색할 수 있도록 제공하는 [Model Context Protocol (MCP)](https://modelcontextprotocol.io) 서버입니다.
 
 ## 주요 기능
 
@@ -13,6 +13,8 @@
 - 앱인토스 번들의 환경값 검증부터 CLI 업로드, 콘솔 검토·출시까지 범용 배포 체크리스트를 제공합니다.
 - 토스 아이콘 카탈로그를 검색해 아이콘 이름/URL을 빠르게 찾을 수 있습니다.
 - 아이콘 타입(`icon-*`, `icn-*`, `u1F...`)에 맞는 권장 컴포넌트 사용법을 바로 안내받을 수 있습니다.
+- 실행할 때마다 공식 예제 저장소 `main`의 최신 commit을 확인하고, 변경된 경우 안전한 텍스트 파일만 선별해 캐시를 갱신합니다.
+- 공식 예제를 예제명·플랫폼·언어·SDK 버전별로 찾고 원본 파일의 원하는 줄 범위를 조회할 수 있습니다.
 
 ## 빠른 시작
 
@@ -25,7 +27,9 @@
 
 아래 클라이언트 설정은 모두 동일한 실행 정보를 사용합니다.
 - `command`: `uvx`
-- `args`: `["--from", "git+https://github.com/chabinhwang/toss-mcp@v2.3.0", "toss-mcp"]`
+- `args`: `["--refresh", "--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]`
+
+`@main`과 `--refresh`를 함께 사용하므로 MCP를 실행할 때마다 최신 toss-mcp commit을 확인하고 자동으로 업데이트합니다. 재현 가능한 특정 릴리스를 고정하려면 `@main`을 `@v2.4.0`으로 바꾸고 `--refresh`를 제거하세요.
 
 #### Claude Code
 
@@ -35,7 +39,7 @@
 {
   "toss-docs": {
     "command": "uvx",
-    "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp@v2.3.0", "toss-mcp"]
+    "args": ["--refresh", "--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]
   }
 }
 ```
@@ -47,7 +51,7 @@
 ```toml
 [mcp_servers.toss-docs]
 command = "uvx"
-args = ["--from", "git+https://github.com/chabinhwang/toss-mcp@v2.3.0", "toss-mcp"]
+args = ["--refresh", "--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]
 ```
 
 #### Gemini CLI
@@ -59,7 +63,7 @@ args = ["--from", "git+https://github.com/chabinhwang/toss-mcp@v2.3.0", "toss-mc
   "mcpServers": {
     "toss-docs": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp@v2.3.0", "toss-mcp"]
+      "args": ["--refresh", "--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]
     }
   }
 }
@@ -77,7 +81,7 @@ args = ["--from", "git+https://github.com/chabinhwang/toss-mcp@v2.3.0", "toss-mc
   "mcpServers": {
     "toss-docs": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/chabinhwang/toss-mcp@v2.3.0", "toss-mcp"]
+      "args": ["--refresh", "--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]
     }
   }
 }
@@ -170,6 +174,35 @@ index와 full은 모두 변경 감지에 사용하지만, 같은 내용을 검�
 - 이름이 `icon-`/`icn-`면 `name` 기반 컴포넌트 (`Icon`, `IconButton`, `Asset.Icon`)
 - 이름이 `u1F...`면 URL 기반 (`Asset.Image`, `Asset.ContentImage`)
 
+### `list_examples`
+
+검색 가능한 Apps in Toss 공식 예제와 SDK 버전을 보여줍니다.
+
+| 파라미터 | 타입 | 필수 | 설명 |
+|----------|------|------|------|
+| `platform` | string | X | 플랫폼 필터 (`webview`, `react_native`, `server`) |
+
+### `search_examples`
+
+공식 예제의 README와 선별된 소스 코드를 검색합니다.
+
+| 파라미터 | 타입 | 필수 | 설명 |
+|----------|------|------|------|
+| `query` | string | O | API, 함수, 기능 또는 코드 키워드 |
+| `example` | string | X | 예제 ID 필터 (`list_examples`에서 확인) |
+| `language` | string | X | `markdown`, `json`, `typescript`, `tsx`, `javascript`, `jsx` |
+| `max_results` | number | X | 최대 결과 수 (기본 5, 최대 20) |
+
+각 결과에는 원본 저장소 경로, 줄 번호, commit SHA, SDK 버전, Apache-2.0 라이선스가 표시됩니다.
+
+### `get_example_file`
+
+`search_examples`가 반환한 경로에서 원하는 줄 범위를 조회합니다. 한 번에 최대 400줄까지 반환합니다.
+
+### `sync_examples`
+
+공식 예제 저장소 `main`의 최신 commit을 수동 확인합니다. `force=true`이면 같은 commit도 다시 다운로드하고 라이선스와 파일을 재검증합니다.
+
 ## 기술적 특징
 
 - 토스 개발자 공식 문서 3개 문서군·6개 index/full 원천 자동 추적
@@ -182,6 +215,11 @@ index와 full은 모두 변경 감지에 사용하지만, 같은 내용을 검�
 - 비동기 병렬 수집 (동시 8개 요청)
 - 패키지 내장 범용 앱인토스 배포 실전 가이드
 - 아이콘 카탈로그 압축 리소스(`toss_mcp/data/toss_icons.json.gz`) 로드 지원
+- 공식 예제 GitHub API ETag + 최신 commit SHA 변경 감지
+- Apache-2.0 검증 후 README·package manifest·소스 코드만 allowlist 수집
+- 이미지·로고·환경 파일·인증서·lockfile·생성 파일 제외
+- 함수·hook·컴포넌트와 줄 범위를 보존하는 코드 전용 청킹
+- 검증 또는 네트워크 장애 시 마지막 정상 예제 스냅샷 유지
 
 ## 동작 방식
 
@@ -198,12 +236,24 @@ index와 full은 모두 변경 감지에 사용하지만, 같은 내용을 검�
   패키지 내장 배포 가이드
        ↓
   소스 필터 가능한 키워드 검색
+
+공식 예제 main commit 조건부 확인
+       ↓ (SHA 변경 시)
+  GitHub tarball 다운로드
+       ↓
+  Apache-2.0/NOTICE + 경로·크기 검증
+       ↓
+  allowlist 텍스트 선별 + 코드 청킹
+       ↓
+  원자적 예제 캐시 교체
 ```
 
 - **캐시**: 시작 시 각 문서군의 index와 full 원천 validator를 비교하고, 변경이 없으면 캐시에서 로드합니다. ETag나 Last-Modified가 없으면 본문 SHA256을 비교합니다.
 - **부분 장애**: 갱신 중 특정 문서군 수집에 실패하면 해당 문서군의 기존 캐시를 유지합니다.
 - **내장 가이드**: 배포 가이드는 패키지에서 매번 로드하므로 공식 문서 캐시에 섞이거나 오래된 캐시에 가려지지 않습니다.
 - **재동기화**: `sync_sources(force=True)` 호출 또는 캐시 디렉토리 삭제 후 재시작하면 됩니다.
+- **공식 예제 최신화**: 매 실행 시 최신 SHA를 확인합니다. 실패하거나 라이선스가 달라지면 새 스냅샷을 거부하고 마지막 정상 캐시를 유지합니다.
+- **공식 예제 출처**: 검색 결과마다 commit 고정 원본 URL과 Apache-2.0 고지를 포함합니다.
 
 ## 공식 원천 실수집 검증
 
@@ -227,20 +277,31 @@ toss-mcp/
 ├── pyproject.toml
 ├── README.md
 ├── LICENSE
+├── THIRD_PARTY_NOTICES.md
 └── toss_mcp/
     ├── __init__.py
     ├── main.py          # MCP 서버 엔트리포인트
     ├── collector.py     # 문서 수집 (httpx 비동기)
     ├── chunker.py       # 마크다운 청킹
     ├── searcher.py      # 키워드 검색
+    ├── example_collector.py # GitHub 최신 SHA·라이선스·allowlist 수집
+    ├── example_chunker.py   # Markdown/TS/TSX/JS 예제 청킹
+    ├── example_searcher.py  # 예제 검색·카탈로그
+    ├── examples.py      # 최신성 확인 + 스냅샷 구성
     ├── icons.py         # 아이콘 카탈로그 로드/검색 + 타입별 추천
     ├── knowledge.py     # 패키지 내장 보완 가이드 로드
     ├── cache.py         # JSON 캐시 + 해시 관리
     └── data/
         ├── toss_icons.json.gz
-        └── deployment_guide.md
+        ├── deployment_guide.md
+        └── licenses/
+            └── apps-in-toss-examples-APACHE-2.0.txt
 ```
 
 ## 라이선스
 
-MIT License
+`toss-mcp` 자체 코드는 MIT License입니다.
+
+런타임에 선별·캐시하는 [`toss/apps-in-toss-examples`](https://github.com/toss/apps-in-toss-examples)의 예제 자료는 Apache License 2.0이며, 해당 조건은 MIT로 대체되지 않습니다. 자세한 출처와 고지는 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)를 참고하세요.
+
+이 프로젝트는 독립적인 오픈소스 프로젝트이며 Toss의 보증이나 제휴를 의미하지 않습니다.
