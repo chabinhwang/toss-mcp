@@ -1,5 +1,6 @@
-"""토스 API 문서 검색 MCP 서버"""
+"""토스 공식 문서·아이콘·예제 검색 MCP 서버."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -8,8 +9,10 @@ from mcp.server.mcpserver import MCPServer
 from .cache import (
     load_chunks,
     load_etags,
+    load_example_snapshot,
     save_chunks,
     save_etags,
+    save_example_snapshot,
     update_hashes,
 )
 from .chunker import chunk_all
@@ -20,6 +23,13 @@ from .collector import (
     collect_etags,
     source_urls,
 )
+from .example_searcher import (
+    list_example_summaries,
+)
+from .example_searcher import (
+    search_examples as search_example_chunks,
+)
+from .examples import refresh_example_snapshot
 from .icons import (
     ICON_USAGE_GUIDE,
     SUPPORTED_ICON_TYPES,
@@ -40,6 +50,7 @@ logger = logging.getLogger(__name__)
 # 전역 청크 저장소
 _chunks: list[dict] = []
 _icon_items: list[dict] = []
+_example_state: dict = {"manifest": {}, "files": [], "chunks": [], "notice": None}
 
 
 def _build_official_chunks(
@@ -131,6 +142,44 @@ async def _init_chunks():
     logger.info("초기화 완료: %d개 청크", len(_chunks))
 
 
+def _activate_examples(snapshot: dict) -> None:
+    global _example_state
+    _example_state = snapshot
+    manifest = snapshot.get("manifest", {})
+    logger.info(
+        "공식 예제 활성화: commit=%s, 파일 %d개, 청크 %d개",
+        manifest.get("commit", "unknown"),
+        len(snapshot.get("files", [])),
+        len(snapshot.get("chunks", [])),
+    )
+
+
+async def _init_examples(force: bool = False) -> str:
+    """공식 예제 main의 최신 SHA를 확인하고 안전하게 캐시를 교체한다."""
+    cached = load_example_snapshot()
+    try:
+        snapshot, updated = await refresh_example_snapshot(cached, force=force)
+        if updated:
+            save_example_snapshot(snapshot)
+        _activate_examples(snapshot)
+        commit = snapshot["manifest"]["commit"]
+        return (
+            f"공식 예제 업데이트 완료: {commit}"
+            if updated
+            else f"공식 예제 변경 없음: {commit}"
+        )
+    except Exception as exc:  # noqa: BLE001 - 마지막 검증 성공 캐시를 유지한다.
+        logger.warning("공식 예제 최신화 실패: %s", exc)
+        if cached:
+            _activate_examples(cached)
+            return (
+                "공식 예제 최신화 실패, 기존 검증 캐시 유지: "
+                f"{cached['manifest'].get('commit', 'unknown')}"
+            )
+        _activate_examples({"manifest": {}, "files": [], "chunks": [], "notice": None})
+        return f"공식 예제를 로드하지 못했습니다: {exc}"
+
+
 def _init_icons():
     """아이콘 카탈로그를 로드한다."""
     global _icon_items
@@ -143,8 +192,8 @@ def _init_icons():
 
 @asynccontextmanager
 async def lifespan(server: MCPServer):
-    """서버 시작 시 문서를 로드한다."""
-    await _init_chunks()
+    """서버 시작 시 문서와 공식 예제를 최신화한다."""
+    await asyncio.gather(_init_chunks(), _init_examples())
     _init_icons()
     yield
 
@@ -153,7 +202,7 @@ mcp = MCPServer(
     "toss-docs",
     instructions=(
         "토스 공식 개발자 문서와 범용 앱인토스 배포 가이드 검색 "
-        "+ 토스 아이콘 카탈로그 검색 도구"
+        "+ 토스 아이콘 카탈로그와 Apache-2.0 공식 예제 검색 도구"
     ),
     lifespan=lifespan,
 )
@@ -265,6 +314,174 @@ async def sync_sources(force: bool = False) -> str:
     else:
         await _init_chunks()
         return f"동기화 완료: {len(_chunks)}개 청크"
+
+
+def _example_attribution(manifest: dict) -> str:
+    attribution = (
+        "\n\n---\n"
+        f"원천: {manifest.get('source_url', 'unknown')}  \n"
+        f"커밋: `{manifest.get('commit', 'unknown')}`  \n"
+        "라이선스: Apache-2.0  \n"
+        "가공: toss-mcp가 검색을 위해 파일을 선별하고 청킹함"
+    )
+    notice = _example_state.get("notice")
+    if notice:
+        attribution += f"\n\n업스트림 NOTICE:\n```text\n{notice}\n```"
+    return attribution
+
+
+@mcp.tool()
+async def list_examples(platform: str | None = None) -> str:
+    """검색 가능한 Apps in Toss 공식 예제 목록을 보여줍니다.
+
+    Args:
+        platform: 플랫폼 필터 (선택). webview, react_native, server
+    """
+    files = _example_state.get("files", [])
+    manifest = _example_state.get("manifest", {})
+    if not files:
+        return "공식 예제가 아직 로드되지 않았습니다. sync_examples를 호출해 주세요."
+
+    supported_platforms = {"webview", "react_native", "server"}
+    if platform and platform not in supported_platforms:
+        return "지원하지 않는 platform입니다. 지원값: react_native, server, webview"
+
+    summaries = list_example_summaries(files)
+    if platform:
+        summaries = [item for item in summaries if platform in item["platforms"]]
+    if not summaries:
+        return f"platform={platform} 조건에 맞는 공식 예제가 없습니다."
+
+    parts = []
+    for item in summaries:
+        sdk = (
+            ", ".join(
+                f"`{name}@{version}`" for name, version in item["sdk_packages"].items()
+            )
+            or "확인된 SDK 없음"
+        )
+        parts.append(
+            f"### `{item['example']}` — {item['title']}\n"
+            f"- 플랫폼: {', '.join(item['platforms']) or '기타'}\n"
+            f"- 파일: {item['file_count']}개\n"
+            f"- SDK: {sdk}\n"
+            + (f"- 설명: {item['summary']}" if item["summary"] else "")
+        )
+    return "\n\n".join(parts) + _example_attribution(manifest)
+
+
+@mcp.tool()
+async def search_examples(
+    query: str,
+    example: str | None = None,
+    language: str | None = None,
+    max_results: int = 5,
+) -> str:
+    """Apps in Toss 공식 예제 코드와 README를 검색합니다.
+
+    Args:
+        query: API, 함수, 기능 또는 코드 키워드
+        example: 예제 ID 필터 (선택). list_examples에서 확인
+        language: 언어 필터 (선택). markdown, json, typescript, tsx, javascript, jsx
+        max_results: 최대 결과 수 (기본 5, 최대 20)
+    """
+    chunks = _example_state.get("chunks", [])
+    manifest = _example_state.get("manifest", {})
+    if not chunks:
+        return "공식 예제가 아직 로드되지 않았습니다. sync_examples를 호출해 주세요."
+    if not query.strip():
+        return "query는 비어 있을 수 없습니다."
+    supported_languages = {
+        "markdown",
+        "json",
+        "typescript",
+        "tsx",
+        "javascript",
+        "jsx",
+    }
+    if language and language not in supported_languages:
+        return "지원하지 않는 language입니다."
+    if max_results < 1:
+        return "max_results는 1 이상이어야 합니다."
+
+    results = search_example_chunks(
+        chunks,
+        query=query,
+        example=example,
+        language=language,
+        max_results=min(max_results, 20),
+    )
+    if not results:
+        return f"'{query}' 조건에 맞는 공식 예제가 없습니다."
+
+    parts = []
+    for index, result in enumerate(results, 1):
+        sdk = (
+            ", ".join(
+                f"{name}@{version}" for name, version in result["sdk_packages"].items()
+            )
+            or "없음"
+        )
+        parts.append(
+            f"### 결과 {index} — `{result['header']}`\n"
+            f"- 예제: `{result['example']}`\n"
+            f"- 파일: `{result['path']}:{result['start_line']}`\n"
+            f"- 언어: `{result['language']}`\n"
+            f"- SDK: {sdk}\n"
+            f"- 원본: {result['url']}\n\n"
+            f"````{result['language']}\n{result['content']}\n````"
+        )
+    return "\n\n---\n\n".join(parts) + _example_attribution(manifest)
+
+
+@mcp.tool()
+async def get_example_file(
+    path: str,
+    start_line: int = 1,
+    end_line: int = 200,
+) -> str:
+    """선별된 공식 예제 파일의 지정 줄 범위를 조회합니다.
+
+    Args:
+        path: search_examples가 반환한 저장소 상대 경로
+        start_line: 시작 줄 (1부터 시작)
+        end_line: 끝 줄 (포함, 한 번에 최대 400줄)
+    """
+    files = _example_state.get("files", [])
+    manifest = _example_state.get("manifest", {})
+    file = next((item for item in files if item["path"] == path), None)
+    if file is None:
+        return f"선별된 공식 예제에서 파일을 찾지 못했습니다: {path}"
+    if start_line < 1 or end_line < start_line:
+        return "줄 범위가 올바르지 않습니다."
+    if end_line - start_line + 1 > 400:
+        return "한 번에 최대 400줄까지 조회할 수 있습니다."
+
+    lines = file["content"].splitlines()
+    if start_line > len(lines):
+        return f"start_line이 파일 길이({len(lines)}줄)를 초과합니다."
+    actual_end = min(end_line, len(lines))
+    content = "\n".join(lines[start_line - 1 : actual_end])
+    return (
+        f"## `{path}:{start_line}-{actual_end}`\n"
+        f"원본: {file['url']}\n\n"
+        f"````{file['language']}\n{content}\n````" + _example_attribution(manifest)
+    )
+
+
+@mcp.tool()
+async def sync_examples(force: bool = False) -> str:
+    """Apps in Toss 공식 예제 main의 최신 커밋을 확인합니다.
+
+    Args:
+        force: True이면 같은 commit이어도 다시 다운로드하고 검증
+    """
+    status = await _init_examples(force=force)
+    return (
+        f"{status}\n"
+        f"파일 {len(_example_state.get('files', []))}개, "
+        f"청크 {len(_example_state.get('chunks', []))}개, 라이선스 Apache-2.0"
+    )
 
 
 @mcp.tool()

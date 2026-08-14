@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "toss-mcp"
-version = "2.3.0"
-description = "토스 개발자 문서 검색 MCP 서버"
+version = "2.4.0"
+description = "토스 개발자 문서·아이콘·공식 예제 검색 MCP 서버"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -19,8 +19,8 @@ toss-mcp = "toss_mcp.main:main"
 [tool.hatch.build]
 include = [
     "toss_mcp/**/*.py",
-    "toss_mcp/data/toss_icons.json.gz",
-    "toss_mcp/data/*.md",
+    "toss_mcp/data/**/*",
     "README.md",
     "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
 ]
