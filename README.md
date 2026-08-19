@@ -7,7 +7,8 @@
 ## 주요 기능
 
 - AI 에이전트가 토스 공식 문서를 바로 검색해 답변에 활용할 수 있습니다.
-- 문서 검색 시 공식 문서군 또는 내장 배포 가이드별 필터를 적용할 수 있습니다.
+- 문서 검색 시 공식 문서군, 내장 배포 가이드, 현장 노트별 필터를 적용할 수 있습니다.
+- 공식 문서에 없는 콘솔/담당자 확인 사항은 큐레이션된 `field_notes`로 검색되며, 앱인토스 관련 쿼리에는 함께 반환됩니다.
 - `list_sources`로 실제 수집 중인 `llms.txt`/`llms-full.txt` 원천과 청크 수를 확인할 수 있습니다.
 - 최신 문서가 필요할 때 `sync_sources`로 수동 동기화할 수 있습니다.
 - 앱인토스 번들의 환경값 검증부터 CLI 업로드, 콘솔 검토·출시까지 범용 배포 체크리스트를 제공합니다.
@@ -29,7 +30,7 @@
 - `command`: `uvx`
 - `args`: `["--refresh", "--from", "git+https://github.com/chabinhwang/toss-mcp@main", "toss-mcp"]`
 
-`@main`과 `--refresh`를 함께 사용하므로 MCP를 실행할 때마다 최신 toss-mcp commit을 확인하고 자동으로 업데이트합니다. 재현 가능한 특정 릴리스를 고정하려면 `@main`을 `@v2.4.0`으로 바꾸고 `--refresh`를 제거하세요.
+`@main`과 `--refresh`를 함께 사용하므로 MCP를 실행할 때마다 최신 toss-mcp commit을 확인하고 자동으로 업데이트합니다. 재현 가능한 특정 릴리스를 고정하려면 `@main`을 `@v2.5.0`으로 바꾸고 `--refresh`를 제거하세요.
 
 #### Claude Code
 
@@ -110,7 +111,7 @@ python3 -m venv .venv
 
 ### `search_docs`
 
-토스 개발자 문서를 키워드로 검색합니다.
+토스 개발자 문서와 내장 보완 자료를 키워드로 검색합니다. 공식 send-message 스펙에 없는 이동 URL `{{ 변수 }}` 치환처럼 콘솔/담당자 확인 사항은 `field_notes`에 있습니다. `apps_in_toss`만 필터해도 관련 현장 노트는 함께 반환됩니다.
 
 ```
 검색어: "앱인토스 결제 API"
@@ -130,6 +131,7 @@ python3 -m venv .venv
 | `tds_react_native` | TDS React Native |
 | `tds_mobile` | TDS Mobile |
 | `deployment_guide` | 범용 앱인토스 배포 실전 가이드(내장 보완 문서) |
+| `field_notes` | 공식 문서에 없는 콘솔/담당자 확인 현장 노트(비공식, 커뮤니티 근거 포함) |
 
 ### `list_sources`
 
@@ -145,7 +147,7 @@ python3 -m venv .venv
 
 index와 full은 모두 변경 감지에 사용하지만, 같은 내용을 검색 결과에 중복 저장하지는 않습니다. 확인 결과 `tossmini-docs.toss.im` 도메인 루트와 `/tds-web/`에는 현재 별도 `llms.txt`/`llms-full.txt`가 없습니다.
 
-별도 공식 개발 문서인 [토스페이먼츠 개발자센터](https://docs.tosspayments.com/llms.txt)도 확인했지만, 앱인토스/TDS와 다른 제품군이고 [전용 공식 MCP](https://docs.tosspayments.com/guides/v2/get-started/llms-guide)를 제공하므로 이 서버에는 합치지 않았습니다. 이 서버의 범위는 앱인토스 미니앱과 그 TDS 문서로 유지합니다.
+별도 공식 개발 문서인 [토스페이먼츠 개발자센터](https://docs.tosspayments.com/llms.txt)도 확인했지만, 앱인토스/TDS와 다른 제품군이고 [전용 공식 MCP](https://docs.tosspayments.com/guides/v2/get-started/llms-guide)를 제공하므로 이 서버에는 합치지 않았습니다. 이 서버의 범위는 앱인토스 미니앱과 그 TDS 문서로 유지합니다. 공식 문서에 없는 콘솔/담당자 확인 사항은 `field_notes`로 큐레이션하며, 커뮤니티를 크롤하지 않습니다. 현재 send-message 이동 URL `{{ 변수 }}` 치환 노트의 근거는 [랜딩 URL 동적 파라미터](https://techchat-apps-in-toss.toss.im/t/url/3297), [발송 건별 동적 랜딩 URL](https://techchat-apps-in-toss.toss.im/t/send-message-api-url/4354)입니다.
 
 ### `sync_sources`
 
@@ -250,7 +252,7 @@ index와 full은 모두 변경 감지에 사용하지만, 같은 내용을 검�
 
 - **캐시**: 시작 시 각 문서군의 index와 full 원천 validator를 비교하고, 변경이 없으면 캐시에서 로드합니다. ETag나 Last-Modified가 없으면 본문 SHA256을 비교합니다.
 - **부분 장애**: 갱신 중 특정 문서군 수집에 실패하면 해당 문서군의 기존 캐시를 유지합니다.
-- **내장 가이드**: 배포 가이드는 패키지에서 매번 로드하므로 공식 문서 캐시에 섞이거나 오래된 캐시에 가려지지 않습니다.
+- **내장 가이드**: 배포 가이드와 현장 노트는 패키지에서 매번 로드하므로 공식 문서 캐시에 섞이거나 오래된 캐시에 가려지지 않습니다. 현장 노트는 커뮤니티를 크롤하지 않고, 담당자 확인이 있는 항목만 큐레이션합니다.
 - **재동기화**: `sync_sources(force=True)` 호출 또는 캐시 디렉토리 삭제 후 재시작하면 됩니다.
 - **공식 예제 최신화**: 매 실행 시 최신 SHA를 확인합니다. 실패하거나 라이선스가 달라지면 새 스냅샷을 거부하고 마지막 정상 캐시를 유지합니다.
 - **공식 예제 출처**: 검색 결과마다 commit 고정 원본 URL과 Apache-2.0 고지를 포함합니다.
@@ -265,6 +267,7 @@ index와 full은 모두 변경 감지에 사용하지만, 같은 내용을 검�
 | `tds_react_native` | full 문서 1개 | 177개 |
 | `tds_mobile` | full 문서 1개 | 370개 |
 | `deployment_guide` | 내장 문서 1개 | 1개 |
+| `field_notes` | 내장 노트 1개 | 1개 |
 
 - 6개 index/full 원천이 모두 HTTP 200으로 응답하고 수집됐습니다.
 - 연속으로 validator를 계산했을 때 6개 모두 같은 값으로 판정됐습니다.
@@ -294,6 +297,8 @@ toss-mcp/
     └── data/
         ├── toss_icons.json.gz
         ├── deployment_guide.md
+        ├── field_notes/
+        │   └── send-message-landing-url.md
         └── licenses/
             └── apps-in-toss-examples-APACHE-2.0.txt
 ```

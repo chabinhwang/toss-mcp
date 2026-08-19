@@ -37,7 +37,7 @@ from .icons import (
     load_icon_items,
     search_icon_catalog,
 )
-from .knowledge import STATIC_SOURCES, collect_static_sources
+from .knowledge import FIELD_NOTES_SOURCE, STATIC_SOURCES, collect_static_sources
 from .searcher import search
 
 logging.basicConfig(
@@ -201,11 +201,40 @@ async def lifespan(server: MCPServer):
 mcp = MCPServer(
     "toss-docs",
     instructions=(
-        "토스 공식 개발자 문서와 범용 앱인토스 배포 가이드 검색 "
-        "+ 토스 아이콘 카탈로그와 Apache-2.0 공식 예제 검색 도구"
+        "토스 공식 개발자 문서, 범용 앱인토스 배포 가이드, "
+        "공식 문서에 없는 콘솔/담당자 확인 현장 노트 검색 "
+        "+ 토스 아이콘 카탈로그와 Apache-2.0 공식 예제 검색 도구. "
+        "send-message 이동 URL은 API의 landingUrl이 아니라 "
+        "콘솔 URL의 {{ 변수 }}를 context로 치환한다. 관련 내용은 field_notes에 있다."
     ),
     lifespan=lifespan,
 )
+
+
+def _format_search_result(index: int, result: dict) -> str:
+    lines = [f"### 결과 {index} [{result['source']}]"]
+    if result["source"] == FIELD_NOTES_SOURCE:
+        as_of = result.get("as_of")
+        status = (
+            "비공식 · 공식 문서 미기재 · 담당자 커뮤니티 확인 · 콘솔 저장 전 재확인"
+        )
+        if as_of:
+            status += f" · {as_of} 기준"
+        lines.append(f"**상태**: {status}")
+    lines.append(f"**헤더**: {result['header']}")
+    lines.append(f"**URL**: {result['url']}")
+    citations = result.get("citations") or []
+    if citations:
+        lines.append("**근거**: " + " ".join(citations))
+    if result.get("injected"):
+        lines.append("**매칭**: 관련 현장 노트 (트리거)")
+    else:
+        lines.append(
+            f"**매칭**: {result['match_count']}개 키워드 ({result['match_ratio']:.0%})"
+        )
+    lines.append("")
+    lines.append(result["content"])
+    return "\n".join(lines)
 
 
 @mcp.tool()
@@ -214,7 +243,11 @@ async def search_docs(
     source: str | None = None,
     max_results: int = 10,
 ) -> str:
-    """토스 개발자 문서를 검색합니다.
+    """토스 개발자 문서와 내장 보완 자료를 검색합니다.
+
+    공식 스펙에 없는 콘솔/담당자 확인 동작(send-message 이동 URL의
+    `{{ 변수 }}` 치환 등)은 field_notes에 있습니다. apps_in_toss만
+    필터해도 관련 현장 노트는 함께 반환됩니다.
 
     Args:
         query: 검색어 (공백으로 구분된 키워드)
@@ -242,17 +275,9 @@ async def search_docs(
     if not results:
         return f"'{query}'에 대한 검색 결과가 없습니다."
 
-    output_parts = []
-    for i, r in enumerate(results, 1):
-        output_parts.append(
-            f"### 결과 {i} [{r['source']}]\n"
-            f"**헤더**: {r['header']}\n"
-            f"**URL**: {r['url']}\n"
-            f"**매칭**: {r['match_count']}개 키워드 ({r['match_ratio']:.0%})\n\n"
-            f"{r['content']}\n"
-        )
-
-    return "\n---\n".join(output_parts)
+    return "\n---\n".join(
+        _format_search_result(index, result) for index, result in enumerate(results, 1)
+    )
 
 
 @mcp.tool()
@@ -272,13 +297,37 @@ async def list_sources() -> str:
             + "\n".join(f"- {role}: {url}" for role, url in source_urls(source))
         )
 
-    parts.append("## 내장 보완 가이드")
-    for source_key, source in STATIC_SOURCES.items():
-        parts.append(
-            f"### `{source_key}` — {source['name']}\n"
-            f"- 현재 검색 청크: {chunk_counts[source_key]}개\n"
-            f"- 식별자: {source['url']}"
-        )
+    guide_sources = [
+        (source_key, source)
+        for source_key, source in STATIC_SOURCES.items()
+        if source.get("kind") != "field_notes"
+    ]
+    note_sources = [
+        (source_key, source)
+        for source_key, source in STATIC_SOURCES.items()
+        if source.get("kind") == "field_notes"
+    ]
+
+    if guide_sources:
+        parts.append("## 내장 보완 가이드")
+        for source_key, source in guide_sources:
+            parts.append(
+                f"### `{source_key}` — {source['name']}\n"
+                f"- 현재 검색 청크: {chunk_counts[source_key]}개\n"
+                f"- 식별자: {source['url']}"
+            )
+
+    if note_sources:
+        parts.append("## 현장 노트 (비공식 · 공식 문서 미기재)")
+        for source_key, source in note_sources:
+            description = source.get("description", "")
+            extra = f"\n- {description}" if description else ""
+            parts.append(
+                f"### `{source_key}` — {source['name']}\n"
+                f"- 현재 검색 청크: {chunk_counts[source_key]}개\n"
+                f"- 식별자: {source['url']}"
+                f"{extra}"
+            )
 
     return "\n\n".join(parts)
 

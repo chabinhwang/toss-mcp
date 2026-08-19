@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "toss-mcp"
-version = "2.4.0"
-description = "토스 개발자 문서·아이콘·공식 예제 검색 MCP 서버"
+version = "2.5.0"
+description = "토스 개발자 문서·아이콘·공식 예제·현장 노트 검색 MCP 서버"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

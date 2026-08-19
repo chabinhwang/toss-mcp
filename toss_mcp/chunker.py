@@ -7,6 +7,14 @@ logger = logging.getLogger(__name__)
 
 MAX_CHUNK_LEN = 3000
 
+_PASSTHROUGH_FIELDS = (
+    "triggers",
+    "status",
+    "related_sources",
+    "citations",
+    "as_of",
+)
+
 # H1 ~ H3 분리용 패턴
 H1_PATTERN = re.compile(r"^# ", re.MULTILINE)
 H2_PATTERN = re.compile(r"^## ", re.MULTILINE)
@@ -130,6 +138,7 @@ def chunk_document(doc: dict) -> list[dict]:
     content = doc["content"]
     source = doc["source"]
     url = doc["url"]
+    extra = {key: doc[key] for key in _PASSTHROUGH_FIELDS if doc.get(key)}
 
     # 1차: H1 기준 분리
     h1_parts = _split_by_pattern(content, H1_PATTERN)
@@ -144,8 +153,9 @@ def chunk_document(doc: dict) -> list[dict]:
                 {
                     "source": source,
                     "url": url,
-                    "header": header,
+                    "header": header or doc.get("title", ""),
                     "content": sp.strip(),
+                    **extra,
                 }
             )
 
